@@ -11,12 +11,12 @@ import paramiko
 import time
 
 #**********User modules**********#
-import peer_conf
+#import peer_conf
 import peer_utils
-import build_utils
-import log_utils
+#import build_utils
+from log_utils import Results
 
-sys.path.append('/root/evt/atm/sriov/guest_scripts')
+sys.path.append('/root/mk7/sriov_scripts/guest_scripts')
 import nic_tests
 import guest1_conf
 import guest2_conf
@@ -26,23 +26,25 @@ scm_build_ver=sys.argv[1]
 firm_ver=sys.argv[2]
 driv_ver=sys.argv[3]
 num_ports=int(sys.argv[4])
+num_pfs=4
 
 driv_path="/root/evt/driver/"
 driver_name="be2net.ko"
 host_logs_path="/root/evt/atm/logs"
-host_logs=open("%s/%s_sriov_host_logs.txt" %(host_logs_path, scm_build_ver), 'w')
+#host_logs=open("%s/%s_sriov_host_logs.txt" %(host_logs_path, scm_build_ver), 'w')
+host_logs="%s/%s_sriov_host_logs.txt" %(host_logs_path, scm_build_ver)
 
 #Skyhawk B0 Max Supported VFs
 max_vfs_1port=63
 max_vfs_2port=63
 max_vfs_4port=31
-num_vfs=2
+num_vfs=4
 
-vf_index_2port=['0', '1']
-#vf_index_4port=['0']
-vm1_vf_list=['vf0', 'vf2']
+#vf_index_2port=['0', '1']
+vf_index_4port=['0']
+vm1_vf_list=['vf0', 'vf4']
 #vm1_vf_list=['vf0', 'vf1']
-vm2_vf_list=['vf1', 'vf3']
+vm2_vf_list=['vf8', 'vf12']
 #vm2_vf_list=['vf2', 'vf3']
 
 iface_list=[]
@@ -59,6 +61,7 @@ domain_vm1 = "VM1-RHEL-6.1"
 domain_vm2 = "VM2-RHEL-6.1-clone"
 
 #Test cases list run on Host
+#TODO: Move to a separate config file ?
 sriov_host_tests = ["load_driver", "ping_test", "unload_driver", "load_driver_with_VFs", "verify_vf", "verify_iface", "check_link", "detach_VFs", "attach_VFs", "change_vf_privilege"]
 
 
@@ -73,8 +76,8 @@ class virtual_machine():
                 self.driv_path=driv_path
 	def set_driv_ver(self, driv_ver):
 		self.driv_ver=driv_ver
-        def set_logs_path(self,logs_path):
-                self.logs_path=logs_path
+        def set_logs_file(self,logs_path):
+                self.logs_file=open('%s/%s_vm%s_logs.txt' %(logs_path,scm_build_ver,self.ipaddress), 'w')
 	def set_num_ports(self,num_ports):
 		self.num_ports=num_ports
 	def set_ip_list(self,ip_list):
@@ -139,21 +142,19 @@ def unload_driver():
 	else:
 		sriov_results.record_test_data("unload_driver", "FAIL", "ABORT", dmesg_out + "Failed to unload driver module: %s" %driver_name)
 
-
+#TODO: Do not hardcode the PCI Device ID.
+#TODO: Device IDs for VFs have changed. They are now the same as PFs.
 def verify_vf(vf_per_port):
 	print "Check lspci output to see if all VFs are instantiated"
-	try:
-		vf_count = int(commands.getoutput("lspci -nnvvvt | grep -i 0728 | wc -l"))
-		if (vf_count != (num_ports*vf_per_port)):
-			log_msg = "Number of VFs found: %d were not equal to the number requested: %d!\n" %(vf_count, num_ports*vf_per_port)
-			sriov_results.record_test_data("verify_vf", "FAIL", "ABORT", log_msg)
-		else:
-			log_msg ="Number of VFs instantiated: %d\n" %(vf_count)
-			sriov_results.record_test_data("verify_vf", "PASS", "INFO", log_msg)
-			return 0
-	except:
-		print "Failed to execute lspci command"
-		sys.exit()
+	vf_count = int(commands.getoutput("lspci -nnvvvt | grep -i 0720 | wc -l"))
+	vf_count -= num_pfs
+	if (vf_count != (num_ports*vf_per_port)):
+		log_msg = "Number of VFs found: %d were not equal to the number requested: %d!\n" %(vf_count, num_ports*vf_per_port)
+		sriov_results.record_test_data("verify_vf", "FAIL", "ABORT", log_msg)
+	else:
+		log_msg ="Number of VFs instantiated: %d\n" %(vf_count)
+		sriov_results.record_test_data("verify_vf", "PASS", "INFO", log_msg)
+		return 0
 
 
 def verify_iface(vf_per_port):
@@ -178,7 +179,10 @@ def get_iface_list():
 	tmp_lines = ifcfg_out.splitlines()
 	for line in tmp_lines:
 		match = re.search(r'^eth\d+', line)
-		list_iface.append(match.group())
+		if match:
+			list_iface.append(match.group())
+		else:
+			print "No interfaces found with name eth# !"
 	sriov_results.record_test_data("get_iface_list", None, "INFO", list_iface)
 	return list_iface
 
@@ -221,11 +225,17 @@ def detach_VFs_from_host(bdf_list):
 	else:
 		return 0
 
-
+#TODO: Device IDs for VF has changed. Need to implement a new way to find out BDF. 
+#TODO: Can use setpci to read the register at offset 0x58 and masking out the LSb. 1-indicates it is a VF. 0-indicates it is a PF.
 def generate_vf_bdf_dict():
-    print "Getting the Bus Device Function ID for each VF stub"
+    	print "Getting the Bus:Device:Function number for each VF stub"
 	vf_idx = 0
-        lspci_out = (commands.getoutput("lspci | grep -i Emulex | grep -i 0728")).splitlines()
+	pf_idx = 0
+        #lspci_out = (commands.getoutput("lspci | grep -i Emulex | grep -i 0728")).splitlines()
+        lspci_out = (commands.getoutput("lspci | grep -i Emulex | grep -i 0720")).splitlines()
+	while (pf_idx < 4):
+		pf_idx += 1
+		lspci_out.pop(0)
         for vf_stub in lspci_out:
                 match = re.search(r'\w+:\w+\.\w+', vf_stub)
                 tmp1 = match.group().split(':')
@@ -234,7 +244,7 @@ def generate_vf_bdf_dict():
                 dev_id =  tmp2[0]
                 func_id = tmp2[1]
                 vf_name = 'vf%s' %vf_idx
-                bdf_dict_vf[vf_name] = {'bus_id':bus_id, 'dev_id':dev_id, 'func_id':func_id }
+                bdf_dict_vf[vf_name] = {'bus_id':bus_id, 'dev_id':dev_id, 'func_id':func_id}
                 vf_idx = vf_idx + 1
 	for vf in bdf_dict_vf.keys():
 		sriov_results.record_test_data("generate_vf_bdf_dict", None, "INFO", "%s \t %s\n" %(vf, bdf_dict_vf[vf]))
@@ -278,6 +288,9 @@ def restore_xml_config(xml_file):
 		print "Error removing file %s - %s" %(e.filename, e.stderr)
 	os.rename(xml_file+"ORIG", xml_file)
 	print "Restored the original XML configuration file %s" %xml_file
+	print "Define the new XML configurations"
+	define_out = commands.getoutput("virsh define %s" %xml_file)
+	print define_out
 
 
 #TODO: Convert argument to list
@@ -303,6 +316,7 @@ def scp_driver_files():
 def vlan_privilege(list_iface, vf_index):
 	print "Changing privilege level of VFs to allow guest VLAN tagging"
 	status = "PASS"
+	commands.getoutput("dmesg -c")
 	for iface in list_iface:
 		for vf in vf_index:
 			ip_out = commands.getoutput("ip link set %s vf %s vlan 4095" %(iface, vf))
@@ -320,30 +334,30 @@ def vlan_privilege(list_iface, vf_index):
 		return 0
 
 
-def configure_peer_setup():
-	conn = peer_utils.connect_ssh(peer_conf.mgmt_ip,peer_conf.user,peer_conf.passwd)
-	if (peer_utils.check_driver(conn)):
-		peer_utils.load_nic_driver(conn, peer_conf.driv_path, peer_conf.driv_ver)
-	else:
-		pass
-	iface_list = peer_utils.get_iface_list(conn)
-	if (not peer_utils.check_link(conn, iface_list, peer_conf.num_ports)):
-		print "Link UP on all interfaces"
-	if (not peer_utils.config_iface(conn, iface_list, peer_conf.peer_ip_2port)):
-		print "Configured IP address on all interfaces"
-	if (not peer_utils.run_iperf_server(conn)):
-		print "Iperf started"
-	print "Disconnecting from Peer machine..."
-	conn.close()
+#def configure_peer_setup():
+#	conn = peer_utils.connect_ssh(peer_conf.mgmt_ip,peer_conf.user,peer_conf.passwd)
+#	if (peer_utils.check_driver(conn)):
+#		peer_utils.load_nic_driver(conn, peer_conf.driv_path, peer_conf.driv_ver)
+#	else:
+#		pass
+#	iface_list = peer_utils.get_iface_list(conn)
+#	if (not peer_utils.check_link(conn, iface_list, peer_conf.num_ports)):
+#		print "Link UP on all interfaces"
+#	if (not peer_utils.config_iface(conn, iface_list, peer_conf.peer_ip_2port)):
+#		print "Configured IP address on all interfaces"
+#	if (not peer_utils.run_iperf_server(conn)):
+#		print "Iperf started"
+#	print "Disconnecting from Peer machine..."
+#	conn.close()
 
 
-def configure_virtual_machine(vm, conf):
+def config_vm_params(vm, conf):
 	vm.set_ip(conf.vm_ip)
 	vm.set_user(conf.vm_user)
 	vm.set_passwd(conf.vm_passwd)
 	vm.set_driv_path(conf.driv_path)
 	vm.set_driv_ver(driv_ver)#Same driver as the PF. Change if needed.
-	vm.set_logs_path(conf.vm_logs)
+	vm.set_logs_file(conf.vm_logs)
 	vm.set_num_ports(num_ports)#Same as the number of PFs. Change if needed.
 	vm.set_ip_list(conf.vm1_ip_2port)
 	vm.set_peer_list(conf.peer_list_2port)
@@ -374,43 +388,54 @@ def poll_results():
 	print "Results file available! Tests complete!!"
 
 
-if __name__ == __main__:
-
+#TODO: Implement Python's getopt method for getting command line arguments
+if __name__ == "__main__":
+	
+	print "*"*70+"\nSkyhawk SRIOV smoke tests Started\n"+"*"*70
+	
 	# Contructor takes test cases list and log file that you want to use
-	sriov_results = log_utils.Results(sriov_host_tests, host_logs)
+	sriov_results = Results(sriov_host_tests, host_logs)
 
-	build_utils.cleanup_downloads()
+	'''build_utils.cleanup_downloads()
 
-	build_utils.get_driv_build(driv_ver)
-
+	build_utils.get_driv_build(driv_ver)'''
+	
 	#Test case 1: Load NIC driver without VFs
+	print "-"*70+"\nTest case 1: Load NIC driver without VFs\n"+"-"*70
 	load_driver(0)
-
+	
 	#Find out the PFs and their BDFs
 	pf_iface_list = get_iface_list()
 
 	#TODO: Add test case: Ping without VFs loaded
 	
 	#Test case 2: Unload NIC driver (without VFs)
+	print "-"*70+"\nTest case 2: Unload NIC driver (without VFs)\n"+"-"*70
 	unload_driver()
-
+	
 	#Test case 3: Load NIC driver with VFs
+	print "-"*70+"\nTest case 3: Load NIC driver with VFs\n"+"-"*70
 	load_driver(num_vfs)
 
-	#Test case 4: Verify number of VF stubs enabled
+	#Test case 4: Verify number of VF stubs instantiated
+	print "-"*70+"\nTest case 4: Verify number of VF stubs instantiated\n"+"-"*70
 	verify_vf(num_vfs)
 
 	#Test case 5: Verify number of interfaces initialized
+	print "-"*70+"\nTest case 5: Verify number of interfaces initialized\n"+"-"*70
 	verify_iface(num_vfs)
 	generate_vf_bdf_dict()
-
+	
 	#Test case 6: Check link up on all Physical interfaces
+	print "-"*70+"\nTest case 6: Check link up on all Physical interfaces\n"+"-"*70
 	if (not check_link(pf_iface_list)):
 		sriov_results.record_test_data("check_link", "PASS", "INFO", "Link detected on all interfaces.\n")
 	else:
 		sriov_results.record_test_data("check_link", "FAIL", "FAIL", "Link NOT detected on all interfaces.\n")
-
+	
 	#Test case 7: Use Virsh to detach a VF stub from host
+	#TODO: Change this. If the number of VMs is not two then what happens ?
+	print "-"*70+"\nTest case 7: Use Virsh to detach a VF stub from host\n"+"-"*70
 	if (not detach_VFs_from_host(vm1_vf_list) and not detach_VFs_from_host(vm2_vf_list)):
 		sriov_results.record_test_data("detach_VFs", "PASS", "INFO", "All VFs Successfully detached from host\n")
 	else:
@@ -421,32 +446,37 @@ if __name__ == __main__:
 	else:
 		sriov_results.record_test_data("detach_VFs", "FAIL", "ABORT", "NOT All VFs Successfully attached to VMs\n")
 	time.sleep(10)
+	
+	try:
+		start_VM(domain_vm1)
+		start_VM(domain_vm2)
+	except:
+		sriov_results.record_test_data("start_VM", None, "ABORT", "VM cannot start. Check configuration or logs.\n")
 
-	start_VM(domain_vm1)
-	start_VM(domain_vm2)
-	print "Waiting 300 seconds for the VMs to start"
+	print "Waiting 300 seconds for the VMs to start..."
 	time.sleep(300)
 
 	scp_driver_files()
 
 	#Test case 8: Assign VLAN privilege to VFs
-	if (not vlan_privilege(pf_iface_list, vf_index_2port)):
+	print "-"*70+"\nTest case 8: Assign VLAN privilege to VFs\n"+"-"*70
+	if (not vlan_privilege(pf_iface_list, vf_index_4port)):
 		sriov_results.record_test_data("change_vf_privilege", "PASS", "INFO", "Successfully assigned VLAN privilege to VFs\n")
 	else:
 		sriov_results.record_test_data("change_vf_privilege", "FAIL", "WARN", "Successfully assigned VLAN privilege to VFs\n")
-
+	'''
 	#configure_peer_setup()
-
+	#TODO: End of test cases on host. So call analyze_test_results to form a global string with results to send in email.
 	vm1 = virtual_machine()
 	config_vm_params(vm1, guest1_conf)
-	log_utils.initialize_results(guest1_conf.nic_tests)
+	guest1_results = log_utils.Results(guest1_conf.nic_tests, vm1.logs_file)
 
 	vm2 = virtual_machine()
 	config_vm_params(vm2, guest2_conf)
-	log_utils.initialize_results(guest2_conf.nic_tests)
+	guest2_results = log_utils.Results(guest2_conf.nic_tests, vm2.logs_file)
 
-	nic_tests.execute_tests(vm1)
-	nic_tests.execute_tests(vm2)
+	nic_tests.execute_tests(vm1, guest1_results)
+	nic_tests.execute_tests(vm2, guest2_results)
 
 	# Add test cases for VF-VF and VF-PF
 
@@ -457,5 +487,5 @@ if __name__ == __main__:
 	restore_xml_config(domainxml_path+xml_vm1)
 	restore_xml_config(domainxml_path+xml_vm2)
 	#poll_results()
-
-	print "end"
+	'''
+	print "*"*70+"\nSkyhawk SRIOV smoke tests completed\n"+"*"*70
