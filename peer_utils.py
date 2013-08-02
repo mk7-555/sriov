@@ -97,7 +97,7 @@ def verify_iface(list_iface,num_ports):
 
 
 def check_link(conn, if_list, num_ports):
-    print "\nUsing ethtool check if link is up on ports"
+	print "\nUsing ethtool check if link is up on ports"
 	status = "PASS"
 	log_msg = ""
         for i in range(0, num_ports):
