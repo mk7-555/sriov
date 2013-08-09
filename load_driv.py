@@ -11,10 +11,10 @@ import paramiko
 import time
 
 #**********User modules**********#
-#import peer_conf
+import peer_conf
 import peer_utils
 #import build_utils
-from log_utils import Results
+import log_utils
 
 sys.path.append('/root/mk7/sriov_scripts/guest_scripts')
 import nic_tests
@@ -77,7 +77,7 @@ class virtual_machine():
 	def set_driv_ver(self, driv_ver):
 		self.driv_ver=driv_ver
         def set_logs_file(self,logs_path):
-                self.logs_file=open('%s/%s_vm%s_logs.txt' %(logs_path,scm_build_ver,self.ipaddress), 'w')
+                self.logs_file="%s/%s_vm%s_logs.txt" %(logs_path, scm_build_ver, self.ipaddress)
 	def set_num_ports(self,num_ports):
 		self.num_ports=num_ports
 	def set_ip_list(self,ip_list):
@@ -303,8 +303,8 @@ def start_VM(xml_file):
 def shutdown_VM(xml_file):
 	print "Shutting down the Virtual Machine %s" %xml_file
 	shut_out = commands.getoutput("virsh shutdown %s" %xml_file)
-	sriov_results.record_test_data("shutdown_VM", None, "INFO", shut_out+commands.getoutput("virsh list")+"\n")
-
+	#sriov_results.record_test_data("shutdown_VM", None, "INFO", shut_out+commands.getoutput("virsh list")+"\n")
+	#In record_test_data: handle cases when a key does not hash to any element
 
 #TODO: Convert argument to list
 def scp_driver_files():
@@ -350,7 +350,7 @@ def vlan_privilege(list_iface, vf_index):
 #	print "Disconnecting from Peer machine..."
 #	conn.close()
 
-
+#TODO: Add conditions based on number of ports
 def config_vm_params(vm, conf):
 	vm.set_ip(conf.vm_ip)
 	vm.set_user(conf.vm_user)
@@ -358,12 +358,12 @@ def config_vm_params(vm, conf):
 	vm.set_driv_path(conf.driv_path)
 	vm.set_driv_ver(driv_ver)#Same driver as the PF. Change if needed.
 	vm.set_logs_file(conf.vm_logs)
-	vm.set_num_ports(num_ports)#Same as the number of PFs. Change if needed.
-	vm.set_ip_list(conf.vm1_ip_2port)
-	vm.set_peer_list(conf.peer_list_2port)
+	vm.set_num_ports(2)#Same as the number of PFs. Change if needed.
+	vm.set_ip_list(conf.vm_ip_2port)
+	vm.set_peer_list(peer_conf.peer_list_2port)#comes from peer_conf.py
 	vm.set_vlan_list(conf.vlan_list_2port)
-	vm.set_vlan_ip_list(conf.vm1_vlanip_2port)
-	vm.set_vlan_peer_list(conf.vlan_peer_2port)
+	vm.set_vlan_ip_list(conf.vm_vlanip_2port)
+	vm.set_vlan_peer_list(peer_conf.vlan_peer_2port)#comes from peer_conf.py
 	vm.set_mtu_list(conf.mtu_list)
 	return
 
@@ -394,12 +394,12 @@ if __name__ == "__main__":
 	print "*"*70+"\nSkyhawk SRIOV smoke tests Started\n"+"*"*70
 	
 	# Contructor takes test cases list and log file that you want to use
-	sriov_results = Results(sriov_host_tests, host_logs)
+	sriov_results = log_utils.Results(sriov_host_tests, host_logs)
 
 	'''build_utils.cleanup_downloads()
 
 	build_utils.get_driv_build(driv_ver)'''
-	
+	'''
 	#Test case 1: Load NIC driver without VFs
 	print "-"*70+"\nTest case 1: Load NIC driver without VFs\n"+"-"*70
 	load_driver(0)
@@ -420,12 +420,12 @@ if __name__ == "__main__":
 	#Test case 4: Verify number of VF stubs instantiated
 	print "-"*70+"\nTest case 4: Verify number of VF stubs instantiated\n"+"-"*70
 	verify_vf(num_vfs)
-
+	
 	#Test case 5: Verify number of interfaces initialized
 	print "-"*70+"\nTest case 5: Verify number of interfaces initialized\n"+"-"*70
-	verify_iface(num_vfs)
+	verify_iface(num_vfs)'''
 	generate_vf_bdf_dict()
-	
+	'''
 	#Test case 6: Check link up on all Physical interfaces
 	print "-"*70+"\nTest case 6: Check link up on all Physical interfaces\n"+"-"*70
 	if (not check_link(pf_iface_list)):
@@ -452,7 +452,7 @@ if __name__ == "__main__":
 		start_VM(domain_vm2)
 	except:
 		sriov_results.record_test_data("start_VM", None, "ABORT", "VM cannot start. Check configuration or logs.\n")
-
+	
 	print "Waiting 300 seconds for the VMs to start..."
 	time.sleep(300)
 
@@ -464,9 +464,12 @@ if __name__ == "__main__":
 		sriov_results.record_test_data("change_vf_privilege", "PASS", "INFO", "Successfully assigned VLAN privilege to VFs\n")
 	else:
 		sriov_results.record_test_data("change_vf_privilege", "FAIL", "WARN", "Successfully assigned VLAN privilege to VFs\n")
-	'''
+	
 	#configure_peer_setup()
 	#TODO: End of test cases on host. So call analyze_test_results to form a global string with results to send in email.
+	sriov_results.logs.close()
+	#log_utils.send_email(scm_build_ver, "PASS", "SRIOV Smoke", log_utils.analyze_results(sriov_results.test_results), sriov_results.logs)
+	'''
 	vm1 = virtual_machine()
 	config_vm_params(vm1, guest1_conf)
 	guest1_results = log_utils.Results(guest1_conf.nic_tests, vm1.logs_file)
@@ -474,7 +477,7 @@ if __name__ == "__main__":
 	vm2 = virtual_machine()
 	config_vm_params(vm2, guest2_conf)
 	guest2_results = log_utils.Results(guest2_conf.nic_tests, vm2.logs_file)
-
+	
 	nic_tests.execute_tests(vm1, guest1_results)
 	nic_tests.execute_tests(vm2, guest2_results)
 
@@ -487,5 +490,8 @@ if __name__ == "__main__":
 	restore_xml_config(domainxml_path+xml_vm1)
 	restore_xml_config(domainxml_path+xml_vm2)
 	#poll_results()
-	'''
+	
+	log_utils.analyze_results(guest1_results.test_results)
+	log_utils.analyze_results(guest2_results.test_results)
+
 	print "*"*70+"\nSkyhawk SRIOV smoke tests completed\n"+"*"*70

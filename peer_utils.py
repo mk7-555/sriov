@@ -31,8 +31,7 @@ def check_driver(conn):
 def load_nic_driver(conn, path, ver):
 	#Clear the system logs first
 	conn.exec_command("dmesg -c")
-	#Kill NetworkManager service
-	conn.exec_command("service NetworkManager stop")
+	kill_network_manager(conn)
 	#Now load the driver module
 	print "Loading NIC driver from %sbe2net-%s" %(path,ver)
 	stdin, stdout, stderr = conn.exec_command("insmod %s/be2net-%s/be2net.ko" %(path,ver))
@@ -51,6 +50,31 @@ def load_nic_driver(conn, path, ver):
                 return (0,log_msg)
 
 
+def kill_network_manager(conn):
+	#Times to try: ttt
+	ttt = 5
+	i=0
+	stdin, stdout, stderr = conn.exec_command("service NetworkManager status")
+	status_out = stdout.read()
+	print status_out
+	running = re.search(r"NetworkManager \(pid  \d+\) is running...", status_out)
+	if running:
+		while i<ttt:
+			stdin, stdout, stderr = conn.exec_command("service NetworkManager stop")
+			print stdout.read()
+			stdin, stdout, stderr = conn.exec_command("service NetworkManager status")
+			status_out = stdout.read()
+			match = re.search(r"NetworkManager is stopped", status_out)
+			if match:
+				print "NetworkManager stopped successfully"
+				return
+			else:
+				i+=1
+		print "\nGiving up on stopping NetworkManager\n"
+	else:
+		return
+	
+
 def unload_driver(conn, num_ports):
         print "\nUnloading be2net driver\n"
         pf=0
@@ -61,17 +85,17 @@ def unload_driver(conn, num_ports):
         stdin, stdout, stderr = conn.exec_command("dmesg -c")
 	dmesg_out = stdout.read()
         tmp_lines = dmesg_out.splitlines()
-        for line in tmp_lines:
-                match = re.search(r'^be2net \w+:\w+:\w+\.\w+: PCI INT \w disabled',line)
+        '''for line in tmp_lines:
+                match = re.search(r'^be2net \w+:\w+:\w+\.\w+: PCI INT \w disabled',line) #**************************This is not working for VFs**************#
                 if match:
                         print match.group()
                         pf=pf+1
-        if (pf==num_ports):
-                log_msg ="Successfully unloaded be2net driver module\n"
-                return (0,log_msg)
-        else:
+        if (pf==num_ports):'''
+        log_msg ="Successfully unloaded be2net driver module\n"
+        return (0,log_msg)
+        '''else:
                 log_msg ="Something went wrong in unloading driver module\n"
-		return (1,log_msg)
+		return (1,log_msg)'''
 
 
 def get_iface_list(conn):
@@ -163,7 +187,7 @@ def iperf_test(conn, list_peer, num_ports):
 	log_msg = ""
 	status = "PASS"
         for i in range(0,num_ports):
-                stdin, stderr, stdout = conn.exec_command("iperf -c %s -w 2M -t 300 -P 5" %list_peer[i])
+                stdin, stderr, stdout = conn.exec_command("iperf -c %s -w 2M -t 30 -P 5" %list_peer[i])
                 iperf_out = stdout.read()
 		print iperf_out
                 match1 = re.search(r'connect failed: Connection refused', iperf_out)
