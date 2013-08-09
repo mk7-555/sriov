@@ -10,14 +10,6 @@ from email.mime.text import MIMEText
 email_sender="aragon@lab.sj.emulex.com"
 email_recipient="madhusudhanan.kesavan@emulex.com"
 
-#Test cases list run on Guest 1
-guest1_tests = ["load_driver", "verify_iface", "check_link", "ping_peer", "iperf_test, config_vlan", "vlan_ping", "vlan_iperf", "remove_vlan", "change_mtu", "jumbo_ping", "vf_to_vf_ping", "vf_to_pf_ping", "unload_driver"]
-#Test cases list run on Guest 2
-guest2_tests = ["load_driver", "verify_iface", "check_link", "ping_peer", "iperf_test, config_vlan", "vlan_ping", "vlan_iperf", "remove_vlan", "change_mtu", "jumbo_ping", "vf_to_vf_ping", "vf_to_pf_ping", "unload_driver"]
-
-test_cases = ["load_driver", "check_link", "ping_test", "iperf_test", "config_vlan", "vlan_ping", "vlan_iperf", "remove_vlan", "change_mtu", "jumbo_ping"]
-
-total_tests=len(test_cases)
 total_pass=0
 total_fail=0
 pass_pcnt=0
@@ -49,7 +41,7 @@ class Results:
 	# Pass the test cases list to this constructor
 	def __init__(self, list_tests="", logs_file=""):
 		for test in list_tests:
-			self.test_results[test] = {'status':'', 'severity':'', 'errmsg':''}
+			self.test_results[test] = {'status':'NOT RUN', 'severity':'N\A', 'errmsg':'N\A'}
 		self.logs = open(logs_file,"w")
 		print self.test_results
 
@@ -90,8 +82,13 @@ class Results:
 def analyze_results(results):
 	overall_results=""
 	for key in results.keys():
-		overall_results = overall_results + "<br><br><b>Test case:</b> %s &nbsp;&nbsp;&nbsp;&nbsp;<b>Status</b> = %s &nbsp;&nbsp;&nbsp;&nbsp;<b>Comment</b> = %s<br>" %(key,results[key]['status'],results[key]['errmsg'])
-	print overall_results
+		overall_results = overall_results + \
+		"<br><br><b>Test case:</b> %s <br>\
+		Status = %s &nbsp;&nbsp;&nbsp;&nbsp;\
+		Severity = %s &nbsp;&nbsp;&nbsp;&nbsp;\
+		Comment = %s<br>" \
+		%(key, results[key]['status'], results[key]['severity'], results[key]['errmsg'])
+	#print overall_results
 	return overall_results
 
 
@@ -99,7 +96,7 @@ def analyze_results(results):
 def send_email(scm_build_ver, overall_status="PASS", subject="", results="", logs=""):
 
 	msg 		= MIMEMultipart('mixed')
-	msg['Subject'] 	= subject
+	msg['Subject'] 	= "%s: %s" %(overall_status, subject)
 	msg['From'] 	= email_sender
 	msg['To'] 	= email_recipient
 	
@@ -118,13 +115,13 @@ def send_email(scm_build_ver, overall_status="PASS", subject="", results="", log
 	<html>
 	  <head></head>
 	  <body>
-		<p><b>NIC Test Results</b>
+		<p><b>NIC SRIOV Smoke Test Results</b>
 		</p>
 		<b>Build version:</b>%s<br>
 		<br><b> Results </b><br>%s
 	  </body>
 	</html>
-	""" %(scm_build_ver,results)
+	""" %(scm_build_ver, results)
 
 	part1 = MIMEText(html, 'html')
 	part2 = MIMEText(results,'plain')

@@ -388,6 +388,14 @@ def poll_results():
 	print "Results file available! Tests complete!!"
 
 
+def form_email_text(all_tests):
+	all_results = ""
+	for test in all_tests:
+		all_results = all_results + "*"*70 + log_utils.analyze_results(test.test_results) + "\n"*3
+	return all_results
+
+
+
 #TODO: Implement Python's getopt method for getting command line arguments
 if __name__ == "__main__":
 	
@@ -399,7 +407,7 @@ if __name__ == "__main__":
 	'''build_utils.cleanup_downloads()
 
 	build_utils.get_driv_build(driv_ver)'''
-	'''
+	
 	#Test case 1: Load NIC driver without VFs
 	print "-"*70+"\nTest case 1: Load NIC driver without VFs\n"+"-"*70
 	load_driver(0)
@@ -423,9 +431,9 @@ if __name__ == "__main__":
 	
 	#Test case 5: Verify number of interfaces initialized
 	print "-"*70+"\nTest case 5: Verify number of interfaces initialized\n"+"-"*70
-	verify_iface(num_vfs)'''
+	verify_iface(num_vfs)
 	generate_vf_bdf_dict()
-	'''
+	
 	#Test case 6: Check link up on all Physical interfaces
 	print "-"*70+"\nTest case 6: Check link up on all Physical interfaces\n"+"-"*70
 	if (not check_link(pf_iface_list)):
@@ -468,8 +476,7 @@ if __name__ == "__main__":
 	#configure_peer_setup()
 	#TODO: End of test cases on host. So call analyze_test_results to form a global string with results to send in email.
 	sriov_results.logs.close()
-	#log_utils.send_email(scm_build_ver, "PASS", "SRIOV Smoke", log_utils.analyze_results(sriov_results.test_results), sriov_results.logs)
-	'''
+	
 	vm1 = virtual_machine()
 	config_vm_params(vm1, guest1_conf)
 	guest1_results = log_utils.Results(guest1_conf.nic_tests, vm1.logs_file)
@@ -491,7 +498,9 @@ if __name__ == "__main__":
 	restore_xml_config(domainxml_path+xml_vm2)
 	#poll_results()
 	
-	log_utils.analyze_results(guest1_results.test_results)
-	log_utils.analyze_results(guest2_results.test_results)
+	#log_utils.analyze_results(guest1_results.test_results)
+	#log_utils.analyze_results(guest2_results.test_results)
+
+	log_utils.send_email(scm_build_ver, "PASS", "SRIOV Smoke Test Results", form_email_text([sriov_results, guest1_results, guest2_results]),  host_logs)
 
 	print "*"*70+"\nSkyhawk SRIOV smoke tests completed\n"+"*"*70
