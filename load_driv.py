@@ -13,7 +13,7 @@ import time
 #**********User modules**********#
 import peer_conf
 import peer_utils
-#import build_utils
+import build_utils
 import log_utils
 
 sys.path.append('/root/mk7/sriov_scripts/guest_scripts')
@@ -38,7 +38,7 @@ host_logs="%s/%s_sriov_host_logs.txt" %(host_logs_path, scm_build_ver)
 max_vfs_1port=63
 max_vfs_2port=63
 max_vfs_4port=31
-num_vfs=4
+num_vfs=31
 
 #vf_index_2port=['0', '1']
 vf_index_4port=['0']
@@ -156,11 +156,11 @@ def verify_vf(vf_per_port):
 		sriov_results.record_test_data("verify_vf", "PASS", "INFO", log_msg)
 		return 0
 
-
+#TODO: MAC addresses might be other than 00:90:FA. Need to handle this condition.
 def verify_iface(vf_per_port):
 	print "Check ifconfig output to see if all interfaces are initialized"
 	try:
-		iface_count = int(commands.getoutput("ifconfig -a | grep -i 00:90:FA:* | wc -l"))
+		iface_count = int(commands.getoutput("ifconfig -a | egrep -i '00:90:FA:*|00:00:C9:*' | wc -l"))
 		if (iface_count != (num_ports + num_ports*vf_per_port)):
 			log_msg = "Number of interfaces found: %d were not equal to the number requested: %d!\n" %(iface_count, num_ports + num_ports*vf_per_port)
 			sriov_results.record_test_data("verify_iface", "FAIL", "ABORT", log_msg)
@@ -432,6 +432,7 @@ if __name__ == "__main__":
 	#Test case 5: Verify number of interfaces initialized
 	print "-"*70+"\nTest case 5: Verify number of interfaces initialized\n"+"-"*70
 	verify_iface(num_vfs)
+	
 	generate_vf_bdf_dict()
 	
 	#Test case 6: Check link up on all Physical interfaces

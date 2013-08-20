@@ -101,7 +101,7 @@ def unload_driver(conn, num_ports):
 def get_iface_list(conn):
 	print "\nGetting the interface list\n"
 	if_list=[]
-        stdin, stdout, stderr = conn.exec_command("ifconfig -a | grep -i 00:90:FA*")
+        stdin, stdout, stderr = conn.exec_command("ifconfig -a | egrep -i '00:90:FA*|00:00:C9*'")
 	ifcfg_out = stdout.readlines()
         for line in ifcfg_out:
                 match = re.search(r'^eth\d+', line)
