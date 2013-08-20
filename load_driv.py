@@ -26,7 +26,6 @@ scm_build_ver=sys.argv[1]
 firm_ver=sys.argv[2]
 driv_ver=sys.argv[3]
 num_ports=int(sys.argv[4])
-num_pfs=4
 
 driv_path="/root/evt/driver/"
 driver_name="be2net.ko"
@@ -40,11 +39,11 @@ max_vfs_2port=63
 max_vfs_4port=31
 num_vfs=31
 
-#vf_index_2port=['0', '1']
-vf_index_4port=['0']
-vm1_vf_list=['vf0', 'vf4']
+vf_index_2port=['0', '1']
+#vf_index_4port=['0']
+vm1_vf_list=['vf0', 'vf32']
 #vm1_vf_list=['vf0', 'vf1']
-vm2_vf_list=['vf8', 'vf12']
+vm2_vf_list=['vf1', 'vf33']
 #vm2_vf_list=['vf2', 'vf3']
 
 iface_list=[]
@@ -147,7 +146,7 @@ def unload_driver():
 def verify_vf(vf_per_port):
 	print "Check lspci output to see if all VFs are instantiated"
 	vf_count = int(commands.getoutput("lspci -nnvvvt | grep -i 0720 | wc -l"))
-	vf_count -= num_pfs
+	vf_count -= num_ports
 	if (vf_count != (num_ports*vf_per_port)):
 		log_msg = "Number of VFs found: %d were not equal to the number requested: %d!\n" %(vf_count, num_ports*vf_per_port)
 		sriov_results.record_test_data("verify_vf", "FAIL", "ABORT", log_msg)
@@ -175,7 +174,7 @@ def verify_iface(vf_per_port):
 
 def get_iface_list():
 	list_iface=[]
-	ifcfg_out = commands.getoutput("ifconfig -a | grep -i 00:90:FA*")
+	ifcfg_out = commands.getoutput("ifconfig -a | egrep -i '00:90:FA:*|00:00:C9:*'")
 	tmp_lines = ifcfg_out.splitlines()
 	for line in tmp_lines:
 		match = re.search(r'^eth\d+', line)
@@ -233,7 +232,7 @@ def generate_vf_bdf_dict():
 	pf_idx = 0
         #lspci_out = (commands.getoutput("lspci | grep -i Emulex | grep -i 0728")).splitlines()
         lspci_out = (commands.getoutput("lspci | grep -i Emulex | grep -i 0720")).splitlines()
-	while (pf_idx < 4):
+	while (pf_idx < num_ports):
 		pf_idx += 1
 		lspci_out.pop(0)
         for vf_stub in lspci_out:
@@ -469,7 +468,7 @@ if __name__ == "__main__":
 
 	#Test case 8: Assign VLAN privilege to VFs
 	print "-"*70+"\nTest case 8: Assign VLAN privilege to VFs\n"+"-"*70
-	if (not vlan_privilege(pf_iface_list, vf_index_4port)):
+	if (not vlan_privilege(pf_iface_list, [vf_index_4port if num_ports==4 else vf_index_2port])):
 		sriov_results.record_test_data("change_vf_privilege", "PASS", "INFO", "Successfully assigned VLAN privilege to VFs\n")
 	else:
 		sriov_results.record_test_data("change_vf_privilege", "FAIL", "WARN", "Successfully assigned VLAN privilege to VFs\n")
@@ -505,3 +504,4 @@ if __name__ == "__main__":
 	log_utils.send_email(scm_build_ver, "PASS", "SRIOV Smoke Test Results", form_email_text([sriov_results, guest1_results, guest2_results]),  host_logs)
 
 	print "*"*70+"\nSkyhawk SRIOV smoke tests completed\n"+"*"*70
+
