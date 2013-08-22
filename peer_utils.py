@@ -168,12 +168,15 @@ def ping_test(conn, list_peer, num_ports, mtu=0):
                         stdin, stdout, stderr = conn.exec_command("ping %s -c 10" %list_peer[i])
 			ping_out = stdout.read()
                 print ping_out
-                match = re.search(r'Destination Host Unreachable', ping_out)
+                #match = re.search(r'Destination Host Unreachable', ping_out)
+		packet_loss = re.search(r'(\d+)% packet loss', ping_out)
                 #TODO:Add error handling when no ip is configured on host interfaces
-                if match:
-                        print match.group()
-                        log_msg = log_msg + "Ping failed to peer @ %s\n" %list_peer[i]
-			status = "FAIL"
+                if packet_loss:
+			lost = int (packet_loss.groups()[0])
+			if lost > 0:
+				log_msg = "!!! Ping failed: %s !!! Aborting further tests" %(packet_loss.group())
+				log_msg = log_msg + "Ping failed to peer @ %s\n" %list_peer[i]
+				status = "FAIL"
                 else:
                         log_msg = log_msg + "Ping successful to peer @ %s\n" %list_peer[i]
         if (status == "FAIL"):
