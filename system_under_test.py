@@ -3,6 +3,8 @@
 __author__ = "Madhu Kesavan"
 __email__  = "madhusudhanan.kesavan@emulex.com"
 
+import commands
+import re
 
 #'object' is the parent of all classes.
 class Physical_machine(object):
@@ -22,7 +24,7 @@ class Physical_machine(object):
                 self.vlan_peer_list     = config_file.vlan_peer_list
                 self.mtu_list           = config_file.mtu_list
 	
-	def is_reachable():
+	def is_reachable(self):
 		ping_out = commands.getoutput("ping %s -c 4" %self.ipaddress)
 		if (re.search(r'Destination Host Unreachable', ping_out)):
 			print "Machine @%s not reachable!" %self.ipaddress
