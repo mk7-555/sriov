@@ -8,7 +8,10 @@ import re
 
 #'object' is the parent of all classes.
 class Physical_machine(object):
-        'Pass in a config file with the following parameters'
+	"""
+        Pass in a config file with the following parameters
+	TODO: Pass driv_ver & num_ports from command line of caller
+	"""
         def __init__(self, config_file):
                 self.ipaddress          = config_file.ipaddress
                 self.user               = config_file.user
@@ -36,7 +39,10 @@ class Physical_machine(object):
 
 #This class subclasses the above defined class.
 class Virtual_machine(Physical_machine):
-	'Defines its own constructor so overrides base class constructor'
+	"""
+	Defines its own constructor so overrides base class constructor
+	TODO: Pass driv_ver & num_ports from command line of caller
+	"""
 	def __init__(self, config_file):
 		'Explicitly call base class constructor'
 		Physical_machine.__init__(self, config_file)

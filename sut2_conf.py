@@ -17,7 +17,7 @@ user		= "root"
 passwd		= "4Emulex"
 driv_path	= "/root/evt/drivers/"
 '+++ driv_ver: per test variable'
-driv_ver	= "10.0.607.0"
+driv_ver	= "10.0.615.0"
 logs_file	= "/root/evt/atm/logs/%s_Nic_test_logs_%s.txt" %(ipaddress, ctime().replace(" ","_"))
 '+++ num_ports: per test vairable'
 num_ports	= 4
