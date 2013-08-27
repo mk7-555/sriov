@@ -1,7 +1,13 @@
 #!/usr/bin/python
 
-#*****Built-in modules*****#
+"""
+nic_tests.py: Wrapper file that runs NIC tests from peer_utils.py
+"""
 
+__author__ = "Madhu Kesavan"
+__email__  = "madhusudhanan.kesavan@emulex.com"
+
+#*****Python native modules*****#
 
 #*****User defined modules*****#
 import peer_utils
@@ -105,7 +111,7 @@ def execute_tests(peer, results):
 		results.record_test_data("remove_vlan", "FAIL", "WARN", msg)
 		return
 
-#Test case 10: Change MTU size & #Test case 11: Jumbo Ping
+#Test case 10: Change MTU size & Test case 11: Jumbo Ping
 	#First Configure unicast IP address on the interfaces
 	if (not peer_utils.config_iface(conn, if_list, peer.ip_list)):
 		for mtu in peer.mtu_list:
@@ -124,6 +130,20 @@ def execute_tests(peer, results):
 				results.record_test_data("jumbo_ping", "FAIL", "ABORT", msg)
 				#return--- We probably want to continue running other tests
 
+#Test case 12: VF to VF Ping
+	(status, msg) = peer_utils.ping_test(conn, peer.vm_peer_list, peer.num_ports)
+	if (status == 0):
+		results.record_test_data("vf_to_vf_ping", "PASS", "INFO", msg)
+	else:
+		results.record_test_data("vf_to_vf_ping", "FAIL", "WARN", msg)
+
+#Test case 13: VF to PF Ping
+	(status, msg) = peer_utils.ping_test(conn, peer.pf_ip_list, peer.num_ports)
+	if (status == 0):
+		results.record_test_data("vf_to_pf_ping", "PASS", "INFO", msg)
+	else:
+		results.record_test_data("vf_to_pf_ping", "FAIL", "WARN", msg)
+
 #Test case 14: Unload Driver
 	if (not peer_utils.check_driver(conn)):
 		(status, msg) = peer_utils.unload_driver(conn, peer.num_ports)
@@ -133,10 +153,10 @@ def execute_tests(peer, results):
 			results.record_test_data("unload_driver", "FAIL", "ABORT", msg)
 			return
 
-# MOVE the following tests to a different file
-#Test case 12: VF to VF Ping 
-#Test case 13: VF to PF Ping
+	#Closing SSH connection to the VM
+	conn.close()
 
+#TODO: Modify "main" such that this module can be run as a standalone for NIC tests
 if __name__ == "__main__":
 	print "Starting NIC sanity tests"
-	execute_tests(obj)
+	execute_tests(sut, results)
