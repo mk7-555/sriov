@@ -1,96 +1,76 @@
 #!/usr/bin/python
 
-#**********Python modules**********#
-import os
+__author__ = "Madhu Kesavan"
+__email__  = "madhusudhanan.kesavan@emulex.com"
+
+'***************************************'
+#	Native Python Modules
+'***************************************'
 import sys
-import subprocess
 import commands
 import re
 import shutil
 import paramiko
 import time
+import os
 
-#**********User modules**********#
+'***************************************'
+#	User defined Modules
+'***************************************'
 import peer_conf
 import peer_utils
 import build_utils
 import log_utils
+import system_under_test
+import sut1_conf
+import sut2_conf
 
 sys.path.append('/root/mk7/sriov_scripts/guest_scripts')
 import nic_tests
-import guest1_conf
-import guest2_conf
 
-#**********Command line arguments**********#
-scm_build_ver=sys.argv[1]
-firm_ver=sys.argv[2]
-driv_ver=sys.argv[3]
-num_ports=int(sys.argv[4])
+'***************************************'
+#	Command Line Arguments
+'***************************************'
+scm_build_ver	= sys.argv[1]
+firm_ver	= sys.argv[2]
+driv_ver	= sys.argv[3]
+num_ports	= int(sys.argv[4])
+num_vfs		= int(sys.argv[5])
 
-driv_path="/root/evt/driver/"
-driver_name="be2net.ko"
-host_logs_path="/root/evt/atm/logs"
-#host_logs=open("%s/%s_sriov_host_logs.txt" %(host_logs_path, scm_build_ver), 'w')
-host_logs="%s/%s_sriov_host_logs.txt" %(host_logs_path, scm_build_ver)
+driv_path	= "/root/evt/driver/"
+driver_name	= "be2net.ko"
+host_logs_path	= "/root/evt/atm/logs"
+vm_logs_path 	= "/root/evt/atm/logs/vm_logs/"
+host_logs	= "%s/%s_sriov_host_logs_%s.txt" %(host_logs_path, scm_build_ver, time.ctime().replace(" ","_"))
 
 #Skyhawk B0 Max Supported VFs
-max_vfs_1port=63
-max_vfs_2port=63
-max_vfs_4port=31
-num_vfs=31
+max_vfs_1port	= 63
+max_vfs_2port	= 63
+max_vfs_4port	= 31
 
-vf_index_2port=['0', '1']
-#vf_index_4port=['0']
-vm1_vf_list=['vf0', 'vf32']
-#vm1_vf_list=['vf0', 'vf1']
-vm2_vf_list=['vf1', 'vf33']
-#vm2_vf_list=['vf2', 'vf3']
+vf_index_2port	= ['0', '1']
+vf_index_4port	= ['0']
+vm1_vf_list	= ['vf0', 'vf4', 'vf8', 'vf12']
+vm2_vf_list	= ['vf1', 'vf5', 'vf9', 'vf13']
 
-iface_list=[]
-pf_iface_list=[]
+iface_list	= []
+pf_iface_list	= []
 
-#A nested dictionary structure to store the BDF for each VF PCI stub
-bdf_dict_vf = {}
+'A nested dictionary structure to store the BDF for each VF PCI stub'
+bdf_dict_vf 	= {}
 
-#**********Virtualization stuff**********#
-domainxml_path = "/etc/libvirt/qemu/"
-xml_vm1 = "VM1-RHEL-6.1.xml"
-xml_vm2 = "VM2-RHEL-6.1-clone.xml"
-domain_vm1 = "VM1-RHEL-6.1"
-domain_vm2 = "VM2-RHEL-6.1-clone"
+'***************************************'
+#	Virtualization Domain Params
+'***************************************'
+domainxml_path 	= "/etc/libvirt/qemu/"
+xml_vm1 	= "VM1-RHEL-6.1.xml"
+xml_vm2 	= "VM2-RHEL-6.1-clone.xml"
+domain_vm1 	= "VM1-RHEL-6.1"
+domain_vm2 	= "VM2-RHEL-6.1-clone"
 
 #Test cases list run on Host
 #TODO: Move to a separate config file ?
 sriov_host_tests = ["load_driver", "ping_test", "unload_driver", "load_driver_with_VFs", "verify_vf", "verify_iface", "check_link", "detach_VFs", "attach_VFs", "change_vf_privilege"]
-
-
-class virtual_machine():
-        def set_ip(self,ipaddress):
-                self.ipaddress=ipaddress
-        def set_user(self,user):
-                self.user=user
-        def set_passwd(self,passwd):
-                self.passwd=passwd
-        def set_driv_path(self,driv_path):
-                self.driv_path=driv_path
-	def set_driv_ver(self, driv_ver):
-		self.driv_ver=driv_ver
-        def set_logs_file(self,logs_path):
-                self.logs_file="%s/%s_vm%s_logs.txt" %(logs_path, scm_build_ver, self.ipaddress)
-	def set_num_ports(self,num_ports):
-		self.num_ports=num_ports
-	def set_ip_list(self,ip_list):
-		self.ip_list=ip_list
-        def set_peer_list(self,peer_list):
-                self.peer_list=peer_list
-	def set_vlan_list(self,vlan_list):
-		self.vlan_list=vlan_list
-	def set_vlan_ip_list(self,vlan_ip_list):
-		self.vlan_ip_list=vlan_ip_list
-	def set_vlan_peer_list(self,vlan_peer_list):
-		self.vlan_peer_list=vlan_peer_list #TODO: Move attributes common to all machines to seperate class ?
-	def set_mtu_list(self,mtu_list):
-		self.mtu_list=mtu_list
 
 
 def load_driver(vf_count):
@@ -141,6 +121,7 @@ def unload_driver():
 	else:
 		sriov_results.record_test_data("unload_driver", "FAIL", "ABORT", dmesg_out + "Failed to unload driver module: %s" %driver_name)
 
+
 #TODO: Do not hardcode the PCI Device ID.
 #TODO: Device IDs for VFs have changed. They are now the same as PFs.
 def verify_vf(vf_per_port):
@@ -154,6 +135,7 @@ def verify_vf(vf_per_port):
 		log_msg ="Number of VFs instantiated: %d\n" %(vf_count)
 		sriov_results.record_test_data("verify_vf", "PASS", "INFO", log_msg)
 		return 0
+
 
 #TODO: MAC addresses might be other than 00:90:FA. Need to handle this condition.
 def verify_iface(vf_per_port):
@@ -305,11 +287,10 @@ def shutdown_VM(xml_file):
 	#sriov_results.record_test_data("shutdown_VM", None, "INFO", shut_out+commands.getoutput("virsh list")+"\n")
 	#In record_test_data: handle cases when a key does not hash to any element
 
-#TODO: Convert argument to list
-def scp_driver_files():
-	print "Copying the test driver files to all VMs..."
-	print (commands.getoutput("scp -r %sbe2net-%s root@%s:%s/" %(driv_path, driv_ver, guest1_conf.vm_ip, guest1_conf.driv_path)))
-	print (commands.getoutput("scp -r %sbe2net-%s root@%s:%s/" %(driv_path, driv_ver, guest2_conf.vm_ip, guest2_conf.driv_path)))
+
+def copy_driver_files_to_VM(ip, dest):
+	print "Copying the test driver files to Virtual Machine@%s" %ip
+	print (commands.getoutput("scp -r %sbe2net-%s root@%s:%s" %(driv_path, driv_ver, ip, dest)))
 
 
 def vlan_privilege(list_iface, vf_index):
@@ -333,49 +314,14 @@ def vlan_privilege(list_iface, vf_index):
 		return 0
 
 
-#def configure_peer_setup():
-#	conn = peer_utils.connect_ssh(peer_conf.mgmt_ip,peer_conf.user,peer_conf.passwd)
-#	if (peer_utils.check_driver(conn)):
-#		peer_utils.load_nic_driver(conn, peer_conf.driv_path, peer_conf.driv_ver)
-#	else:
-#		pass
-#	iface_list = peer_utils.get_iface_list(conn)
-#	if (not peer_utils.check_link(conn, iface_list, peer_conf.num_ports)):
-#		print "Link UP on all interfaces"
-#	if (not peer_utils.config_iface(conn, iface_list, peer_conf.peer_ip_2port)):
-#		print "Configured IP address on all interfaces"
-#	if (not peer_utils.run_iperf_server(conn)):
-#		print "Iperf started"
-#	print "Disconnecting from Peer machine..."
-#	conn.close()
-
-#TODO: Add conditions based on number of ports
-def config_vm_params(vm, conf):
-	vm.set_ip(conf.vm_ip)
-	vm.set_user(conf.vm_user)
-	vm.set_passwd(conf.vm_passwd)
-	vm.set_driv_path(conf.driv_path)
-	vm.set_driv_ver(driv_ver)#Same driver as the PF. Change if needed.
-	vm.set_logs_file(conf.vm_logs)
-	vm.set_num_ports(2)#Same as the number of PFs. Change if needed.
-	vm.set_ip_list(conf.vm_ip_2port)
-	vm.set_peer_list(peer_conf.peer_list_2port)#comes from peer_conf.py
-	vm.set_vlan_list(conf.vlan_list_2port)
-	vm.set_vlan_ip_list(conf.vm_vlanip_2port)
-	vm.set_vlan_peer_list(peer_conf.vlan_peer_2port)#comes from peer_conf.py
-	vm.set_mtu_list(conf.mtu_list)
-	return
-
-
-def remote_run(guest_ip, script):
-	print "Running tests on remote machine %s" %guest_ip
-	guest_ssh = paramiko.SSHClient()
-	guest_ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-	#guest_ssh.connect(guest_ip,username='root',password='4Emulex')
-	guest_ssh.connect(guest_ip)
-	stdin, stdout, stderr = guest_ssh.exec_command("%s %s" %(script, driv_ver))
+def get_logs_file(ip, file, dest):
+	print "Collecting logs file %s from Machine@%s" %(ip, file)
+	ssh = paramiko.SSHClient()
+	ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+	ssh.connect(ip)
+	stdin, stdout, stderr = ssh.exec_command("scp %s root@%s:%s" %(file, ip, dest))
 	print stderr.readlines()
-	print stdout.readlines()#This needs to be changed. Lots of lines to print!
+	print stdout.readlines()
 
 
 def poll_results():
@@ -423,7 +369,7 @@ if __name__ == "__main__":
 	#Test case 3: Load NIC driver with VFs
 	print "-"*70+"\nTest case 3: Load NIC driver with VFs\n"+"-"*70
 	load_driver(num_vfs)
-
+	
 	#Test case 4: Verify number of VF stubs instantiated
 	print "-"*70+"\nTest case 4: Verify number of VF stubs instantiated\n"+"-"*70
 	verify_vf(num_vfs)
@@ -461,10 +407,8 @@ if __name__ == "__main__":
 	except:
 		sriov_results.record_test_data("start_VM", None, "ABORT", "VM cannot start. Check configuration or logs.\n")
 	
-	print "Waiting 300 seconds for the VMs to start..."
-	time.sleep(300)
-
-	scp_driver_files()
+	print "Waiting 180 seconds for the VMs to start..."
+	time.sleep(180)
 
 	#Test case 8: Assign VLAN privilege to VFs
 	print "-"*70+"\nTest case 8: Assign VLAN privilege to VFs\n"+"-"*70
@@ -473,35 +417,41 @@ if __name__ == "__main__":
 	else:
 		sriov_results.record_test_data("change_vf_privilege", "FAIL", "WARN", "Successfully assigned VLAN privilege to VFs\n")
 	
-	#configure_peer_setup()
-	#TODO: End of test cases on host. So call analyze_test_results to form a global string with results to send in email.
 	sriov_results.logs.close()
 	
-	vm1 = virtual_machine()
-	config_vm_params(vm1, guest1_conf)
-	guest1_results = log_utils.Results(guest1_conf.nic_tests, vm1.logs_file)
+	'**********************************************************************'
+	#TODO: Change this to list based approach.
+	#TODO: Add multithreading support to run VMs in parallel.
+	'**********************************************************************'
 
-	vm2 = virtual_machine()
-	config_vm_params(vm2, guest2_conf)
-	guest2_results = log_utils.Results(guest2_conf.nic_tests, vm2.logs_file)
+	vm1 = system_under_test.Virtual_machine(sut1_conf)
+	vm1_results = log_utils.Results(sut1_conf.nic_tests, vm1.logs_file)
+	copy_driver_files_to_VM(vm1.ipaddress, vm1.driv_path)
 	
-	nic_tests.execute_tests(vm1, guest1_results)
-	nic_tests.execute_tests(vm2, guest2_results)
+	vm2 = system_under_test.Virtual_machine(sut2_conf)
+	vm2_results = log_utils.Results(sut2_conf.nic_tests, vm2.logs_file)
+	copy_driver_files_to_VM(vm2.ipaddress, vm2.driv_path)
+	
+	"""
+	NIC tests on Virtual machine start here
+	"""
+	if not vm1.is_reachable():
+		nic_tests.execute_tests(vm1, vm1_results)
+		vm1.logs_file.close()		
+		get_logs_file(vm1.ipaddress, vm1.logs_file, vm_logs_path)
 
-	# Add test cases for VF-VF and VF-PF
-
+	if not vm2.is_reachable():
+		nic_tests.execute_tests(vm2, vm2_results)
+		vm1.logs_file.close()
+		get_logs_file(vm2.ipaddress, vm2.logs_file, vm_logs_path)
+	
 	shutdown_VM(domain_vm1)
 	shutdown_VM(domain_vm2)
-
 	# !!!!!! WARNING: Be sure not to delete the original VM xml configuration!
 	restore_xml_config(domainxml_path+xml_vm1)
 	restore_xml_config(domainxml_path+xml_vm2)
-	#poll_results()
 	
-	#log_utils.analyze_results(guest1_results.test_results)
-	#log_utils.analyze_results(guest2_results.test_results)
-
-	log_utils.send_email(scm_build_ver, "PASS", "SRIOV Smoke Test Results", form_email_text([sriov_results, guest1_results, guest2_results]),  host_logs)
-
+	log_utils.send_email(scm_build_ver, "PASS", "SRIOV Smoke Test Results", form_email_text([sriov_results, vm1_results, vm2_results]),  host_logs)
+	
 	print "*"*70+"\nSkyhawk SRIOV smoke tests completed\n"+"*"*70
 
